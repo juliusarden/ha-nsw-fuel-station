@@ -48,13 +48,14 @@ class NSWFuelStationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(f"No data returned for station {self.station_id}")
 
         # Return structured data keyed by fuel type
+        # Price objects use attributes, not dict keys
         result = {}
-        for price in prices:
-            fuel_type = price.get("fueltype", price.get("FuelType", ""))
+        for p in prices:
+            fuel_type = getattr(p, "fuel_type", "")
             if fuel_type:
                 result[fuel_type] = {
-                    "price": price.get("price", price.get("Price")),
+                    "price": getattr(p, "price", None),
                     "fuel_type": fuel_type,
-                    "last_updated": price.get("lastupdated", price.get("LastUpdated")),
+                    "last_updated": getattr(p, "last_updated", None),
                 }
         return result
