@@ -59,6 +59,18 @@ class NSWFuelStationTracker(TrackerEntity):
         self._attr_unique_id = f"nsw_fuel_loc_{station_id}"
 
     @property
+    def location_name(self) -> str:
+        """Show primary fuel price as state instead of zone."""
+        if self._coordinator and self._coordinator.data:
+            prices = self._coordinator.data.get("prices", {})
+            for ft in sorted(self._fuel_types):
+                if ft in prices:
+                    p = prices[ft].get("price")
+                    if p is not None:
+                        return f"{ft} {p}¢"
+        return "—"
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         attrs = {
             "station_name": self._station_name,
