@@ -11,7 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_STATION_ID, CONF_STATION_LAT, CONF_STATION_LON, CONF_STATION_NAME, DOMAIN
+from .const import CONF_FUEL_TYPES, CONF_STATION_ID, CONF_STATION_LAT, CONF_STATION_LON, CONF_STATION_NAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,9 +28,9 @@ async def async_setup_entry(
     lon = entry.data.get(CONF_STATION_LON, 0)
 
     if lat and lon:
-        # Get coordinator for fuel price data
         coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-        async_add_entities([NSWFuelStationTracker(station_name, station_id, lat, lon, coordinator)])
+        fuel_types = entry.options.get(CONF_FUEL_TYPES, [])
+        async_add_entities([NSWFuelStationTracker(station_name, station_id, lat, lon, coordinator, fuel_types)])
 
 
 class NSWFuelStationTracker(TrackerEntity):
@@ -47,10 +47,12 @@ class NSWFuelStationTracker(TrackerEntity):
         lat: float,
         lon: float,
         coordinator=None,
+        fuel_types=None,
     ) -> None:
         self._station_name = station_name
         self._station_id = station_id
         self._coordinator = coordinator
+        self._fuel_types = set(fuel_types or [])
         self._attr_name = station_name
         self._attr_latitude = lat
         self._attr_longitude = lon
@@ -62,10 +64,12 @@ class NSWFuelStationTracker(TrackerEntity):
             "station_name": self._station_name,
             "station_id": self._station_id,
         }
-        # Include fuel prices if coordinator has data
         if self._coordinator and self._coordinator.data:
             prices = self._coordinator.data.get("prices", {})
             for fuel_type, data in sorted(prices.items()):
+                # Only show user-selected fuel types (or all if none selected)
+                if self._fuel_types and fuel_type not in self._fuel_types:
+                    continue
                 price = data.get("price")
                 if price is not None:
                     attrs[f"price_{fuel_type}"] = f"{price}¢/L"
