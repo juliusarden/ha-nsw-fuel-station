@@ -1,0 +1,10 @@
+{
+  "domain": "nsw_fuel_station",
+  "name": "NSW Fuel Station",
+  "codeowners": ["@juliusarden"],
+  "config_flow": true,
+  "documentation": "https://github.com/juliusarden/ha-nsw-fuel-station",
+  "iot_class": "cloud_polling",
+  "requirements": ["nsw-fuel-api-client==1.1.0"],
+  "version": "1.0.0"
+}

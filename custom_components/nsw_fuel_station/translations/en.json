@@ -1,0 +1,9 @@
+{
+  "entity": {
+    "sensor": {
+      "fuel_price": {
+        "name": "Price"
+      }
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add NSW Fuel Station",
+        "description": "Enter the fuel station details from the NSW FuelCheck app.",
+        "data": {
+          "station_id": "Station ID",
+          "fuel_types": "Fuel Types"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to NSW FuelCheck API",
+      "invalid_station": "Station not found or no data available",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This station is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "NSW Fuel Station Options",
+        "description": "Update fuel types to track.",
+        "data": {
+          "fuel_types": "Fuel Types"
+        }
+      }
+    }
+  }
+}
