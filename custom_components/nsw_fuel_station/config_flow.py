@@ -107,7 +107,9 @@ class NSWFuelStationOptionsFlow(OptionsFlow):
     """Handle options flow."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
-        self.config_entry = config_entry
+        """Initialize options flow."""
+        super().__init__()
+        self._config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
