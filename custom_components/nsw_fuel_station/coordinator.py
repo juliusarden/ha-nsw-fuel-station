@@ -39,7 +39,7 @@ class NSWFuelStationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Fetch fuel prices from the API."""
         try:
             prices = await self.hass.async_add_executor_job(
-                lambda: self.client.get_prices_for_station(self.station_id)
+                lambda: self.client.get_fuel_prices_for_station(self.station_id)
             )
         except Exception as err:
             raise UpdateFailed(f"Error fetching data for station {self.station_id}: {err}") from err

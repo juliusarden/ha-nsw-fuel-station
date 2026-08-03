@@ -72,7 +72,7 @@ class NSWFuelStationConfigFlow(ConfigFlow, domain=DOMAIN):
             try:
                 client = FuelCheckClient()
                 prices = await self.hass.async_add_executor_job(
-                    lambda: client.get_prices_for_station(station_id)
+                    lambda: client.get_fuel_prices_for_station(station_id)
                 )
             except Exception:
                 prices = None
