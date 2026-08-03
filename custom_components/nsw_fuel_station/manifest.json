@@ -5,6 +5,6 @@
   "config_flow": true,
   "documentation": "https://github.com/juliusarden/ha-nsw-fuel-station",
   "iot_class": "cloud_polling",
-  "requirements": ["nsw-fuel-api-client==1.1.0"],
-  "version": "1.0.0"
+  "requirements": ["nsw-fuel-api-client==1.1.0", "requests"],
+  "version": "1.1.0"
 }
