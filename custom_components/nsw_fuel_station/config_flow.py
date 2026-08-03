@@ -28,6 +28,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 PHOTON_URL = "https://photon.komoot.io/api/"
+FUEL_API_BASE = "https://api.onegov.nsw.gov.au/FuelCheckApp/v1"
 SEARCH_RADIUS = 15  # km
 
 
@@ -44,30 +45,40 @@ def _geocode_suburb(suburb: str) -> tuple[float, float] | None:
         features = resp.json().get("features", [])
         if features:
             coords = features[0]["geometry"]["coordinates"]
-            return (coords[1], coords[0])  # (lat, lon)
+            return (coords[1], coords[0])
     except Exception as exc:
-        _LOGGER.debug("Geocoding failed for '%s': %s", suburb, exc)
+        _LOGGER.debug("Geocoding failed: %s", exc)
     return None
 
 
 def _search_nearby_stations(lat: float, lon: float) -> list[dict[str, Any]]:
-    """Search for nearby fuel stations using FuelCheck API."""
+    """Search nearby stations with coordinates via raw FuelCheck API."""
     try:
-        client = FuelCheckClient(timeout=10)
-        results = client.get_fuel_prices_within_radius(
-            latitude=lat, longitude=lon, radius=SEARCH_RADIUS,
-            fuel_type="U91", brands=[]
+        resp = requests.post(
+            f"{FUEL_API_BASE}/fuel/prices/nearby",
+            json={
+                "fueltype": "U91",
+                "latitude": lat,
+                "longitude": lon,
+                "radius": SEARCH_RADIUS,
+                "brand": [],
+            },
+            timeout=12,
         )
+        resp.raise_for_status()
+        data = resp.json()
         stations = {}
-        for sp in results:
-            code = sp.station.code
-            if code not in stations:
-                stations[code] = {
-                    "code": str(code),
-                    "name": sp.station.name,
-                    "brand": sp.station.brand,
-                    "address": sp.station.address,
-                }
+        for s in data.get("stations", []):
+            code = s.get("code", 0)
+            loc = s.get("location", {})
+            stations[code] = {
+                "code": str(code),
+                "name": s.get("name", ""),
+                "brand": s.get("brand", ""),
+                "address": s.get("address", ""),
+                "latitude": loc.get("latitude", lat),
+                "longitude": loc.get("longitude", lon),
+            }
         return list(stations.values())
     except Exception as exc:
         _LOGGER.warning("Station search failed: %s", exc)
@@ -113,15 +124,10 @@ class NSWFuelStationConfigFlow(ConfigFlow, domain=DOMAIN):
             if not suburb:
                 errors["suburb"] = "suburb_required"
             else:
-                coords = await self.hass.async_add_executor_job(
-                    _geocode_suburb, suburb
-                )
+                coords = await self.hass.async_add_executor_job(_geocode_suburb, suburb)
                 if not coords:
                     errors["suburb"] = "geocode_failed"
                 else:
-                    self._station_data["lat"] = coords[0]
-                    self._station_data["lon"] = coords[1]
-
                     stations = await self.hass.async_add_executor_job(
                         _search_nearby_stations, coords[0], coords[1]
                     )
@@ -133,11 +139,8 @@ class NSWFuelStationConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="search",
-            data_schema=vol.Schema({
-                vol.Required("suburb"): str,
-            }),
+            data_schema=vol.Schema({vol.Required("suburb"): str}),
             errors=errors,
-            description_placeholders={"example": "e.g. Parramatta, Rouse Hill, 2155"},
         )
 
     async def async_step_select_station(
@@ -148,52 +151,43 @@ class NSWFuelStationConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             selected_code = user_input["station"]
-            station = next(
-                (s for s in stations if s["code"] == selected_code), None
-            )
+            station = next((s for s in stations if s["code"] == selected_code), None)
             if station:
-                sid = station["code"]
-                await self.async_set_unique_id(f"nsw_fuel_{sid}")
+                await self.async_set_unique_id(f"nsw_fuel_{station['code']}")
                 self._abort_if_unique_id_configured()
 
-                self._station_data["station_id"] = sid
-                self._station_data["station_name"] = (
-                    f"{station['brand']} {station['name']}".strip()[:100]
-                )
+                self._station_data["station_id"] = station["code"]
+                self._station_data["station_name"] = station["name"]
+                self._station_data["station_lat"] = station["latitude"]
+                self._station_data["station_lon"] = station["longitude"]
                 return await self.async_step_fuel_types()
 
-        options = [
-            {"value": s["code"], "label": f"{s['brand']} — {s['name']} ({s['address'][:50]})"}
+        options = {
+            s["code"]: f"{s['brand']} — {s['name']} ({s.get('address','')[:30]})"
             for s in stations
-        ]
+        }
         return self.async_show_form(
             step_id="select_station",
-            data_schema=vol.Schema({
-                vol.Required("station"): vol.In({s["code"]: f"{s['brand']} — {s['name']}" for s in stations})
-            }),
+            data_schema=vol.Schema({vol.Required("station"): vol.In(options)}),
         )
 
     async def async_step_manual(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manual station ID entry."""
-        errors = {}
-
         if user_input is not None:
             station_id = str(user_input[CONF_STATION_ID]).strip()
             await self.async_set_unique_id(f"nsw_fuel_{station_id}")
             self._abort_if_unique_id_configured()
-
             self._station_data["station_id"] = station_id
             self._station_data["station_name"] = f"Station {station_id}"
+            self._station_data["station_lat"] = 0
+            self._station_data["station_lon"] = 0
             return await self.async_step_fuel_types()
 
         return self.async_show_form(
             step_id="manual",
-            data_schema=vol.Schema({
-                vol.Required(CONF_STATION_ID): str,
-            }),
-            errors=errors,
+            data_schema=vol.Schema({vol.Required(CONF_STATION_ID): str}),
         )
 
     async def async_step_fuel_types(
@@ -206,8 +200,8 @@ class NSWFuelStationConfigFlow(ConfigFlow, domain=DOMAIN):
                 data={
                     CONF_STATION_ID: self._station_data["station_id"],
                     CONF_STATION_NAME: self._station_data["station_name"],
-                    CONF_STATION_LAT: self._station_data.get("lat", 0),
-                    CONF_STATION_LON: self._station_data.get("lon", 0),
+                    CONF_STATION_LAT: self._station_data.get("station_lat", 0),
+                    CONF_STATION_LON: self._station_data.get("station_lon", 0),
                 },
                 options={
                     CONF_FUEL_TYPES: user_input.get(CONF_FUEL_TYPES, DEFAULT_FUEL_TYPES),
@@ -219,8 +213,7 @@ class NSWFuelStationConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({
                 vol.Optional(CONF_FUEL_TYPES, default=DEFAULT_FUEL_TYPES): selector.SelectSelector(
                     selector.SelectSelectorConfig(
-                        options=FUEL_TYPES,
-                        multiple=True,
+                        options=FUEL_TYPES, multiple=True,
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 ),
@@ -245,15 +238,13 @@ class NSWFuelStationOptionsFlow(OptionsFlow):
     ) -> FlowResult:
         if user_input is not None:
             return self.async_create_entry(data=user_input)
-
         current = self._config_entry.options.get(CONF_FUEL_TYPES, DEFAULT_FUEL_TYPES)
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
                 vol.Optional(CONF_FUEL_TYPES, default=current): selector.SelectSelector(
                     selector.SelectSelectorConfig(
-                        options=FUEL_TYPES,
-                        multiple=True,
+                        options=FUEL_TYPES, multiple=True,
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 ),
