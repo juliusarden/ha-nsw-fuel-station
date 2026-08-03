@@ -1,8 +1,9 @@
-"""Device tracker platform — shows station location on HA map."""
+"""Device tracker platform — shows station location on HA map with fuel prices."""
 
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.components.device_tracker import SourceType
 from homeassistant.components.device_tracker.config_entry import TrackerEntity
@@ -27,28 +28,52 @@ async def async_setup_entry(
     lon = entry.data.get(CONF_STATION_LON, 0)
 
     if lat and lon:
-        async_add_entities([NSWFuelStationTracker(station_name, station_id, lat, lon)])
+        # Get coordinator for fuel price data
+        coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+        async_add_entities([NSWFuelStationTracker(station_name, station_id, lat, lon, coordinator)])
 
 
 class NSWFuelStationTracker(TrackerEntity):
-    """Device tracker for a fuel station location."""
+    """Device tracker showing station on map with fuel prices in popup."""
 
     _attr_has_entity_name = True
     _attr_source_type = SourceType.GPS
     _attr_icon = "mdi:gas-station"
-    _attr_name = "Location"
 
-    def __init__(self, station_name: str, station_id: str, lat: float, lon: float) -> None:
+    def __init__(
+        self,
+        station_name: str,
+        station_id: str,
+        lat: float,
+        lon: float,
+        coordinator=None,
+    ) -> None:
         self._station_name = station_name
         self._station_id = station_id
+        self._coordinator = coordinator
+        self._attr_name = station_name
         self._attr_latitude = lat
         self._attr_longitude = lon
-        short = station_name.split(" ")[0]
         self._attr_unique_id = f"nsw_fuel_loc_{station_id}"
 
     @property
-    def extra_state_attributes(self) -> dict:
-        return {
+    def extra_state_attributes(self) -> dict[str, Any]:
+        attrs = {
             "station_name": self._station_name,
             "station_id": self._station_id,
         }
+        # Include fuel prices if coordinator has data
+        if self._coordinator and self._coordinator.data:
+            prices = self._coordinator.data.get("prices", {})
+            for fuel_type, data in sorted(prices.items()):
+                price = data.get("price")
+                if price is not None:
+                    attrs[f"price_{fuel_type}"] = f"{price}¢/L"
+        return attrs
+
+    async def async_added_to_hass(self) -> None:
+        """Listen to coordinator updates."""
+        if self._coordinator:
+            self.async_on_remove(
+                self._coordinator.async_add_listener(self.async_write_ha_state)
+            )
