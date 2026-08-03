@@ -53,6 +53,7 @@ def _geocode_suburb(suburb: str) -> tuple[float, float] | None:
 
 def _search_nearby_stations(lat: float, lon: float) -> list[dict[str, Any]]:
     """Search nearby stations with coordinates via raw FuelCheck API."""
+    from datetime import datetime
     try:
         resp = requests.post(
             f"{FUEL_API_BASE}/fuel/prices/nearby",
@@ -63,6 +64,7 @@ def _search_nearby_stations(lat: float, lon: float) -> list[dict[str, Any]]:
                 "radius": SEARCH_RADIUS,
                 "brand": [],
             },
+            headers={"requesttimestamp": datetime.now().strftime("%d/%m/%Y %H:%M:%S")},
             timeout=12,
         )
         resp.raise_for_status()
